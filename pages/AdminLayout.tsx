@@ -19,7 +19,10 @@ import {
   Image as ImageIcon,
   List,
   Sparkles,
-  Menu
+  Menu,
+  Copy,
+  Check,
+  GripVertical
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
@@ -239,6 +242,11 @@ const ProductFormModal = ({
   const [newVarName, setNewVarName] = useState('');
   const [newVarPrice, setNewVarPrice] = useState('');
   const [newVarStock, setNewVarStock] = useState('');
+  const [editingVariationId, setEditingVariationId] = useState<string | null>(null);
+  const [variationErrors, setVariationErrors] = useState<Record<string, string>>({});
+  
+  // Drag and drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Tags State
   const [tagInput, setTagInput] = useState('');
@@ -256,24 +264,87 @@ const ProductFormModal = ({
     }
   };
 
-  const addVariation = () => {
-    if (!newVarName || !newVarPrice || !newVarStock) return;
+  const validateVariation = () => {
+      const errors: Record<string, string> = {};
+      if (!newVarName.trim()) errors.name = "Name required";
+      if (!newVarPrice || isNaN(parseFloat(newVarPrice)) || parseFloat(newVarPrice) < 0) errors.price = "Invalid price";
+      if (!newVarStock || isNaN(parseInt(newVarStock)) || parseInt(newVarStock) < 0) errors.stock = "Invalid stock";
+      setVariationErrors(errors);
+      return Object.keys(errors).length === 0;
+  };
+
+  const handleAddOrUpdateVariation = () => {
+    if (!validateVariation()) return;
     
-    const newVariation: ProductVariation = {
-        id: Date.now().toString(),
-        name: newVarName,
-        price: parseFloat(newVarPrice),
-        stock: parseInt(newVarStock)
-    };
+    if (editingVariationId) {
+        setVariations(prev => prev.map(v => v.id === editingVariationId ? {
+            ...v,
+            name: newVarName,
+            price: parseFloat(newVarPrice),
+            stock: parseInt(newVarStock)
+        } : v));
+        setEditingVariationId(null);
+    } else {
+        const newVariation: ProductVariation = {
+            id: Date.now().toString(),
+            name: newVarName,
+            price: parseFloat(newVarPrice),
+            stock: parseInt(newVarStock)
+        };
+        setVariations([...variations, newVariation]);
+    }
     
-    setVariations([...variations, newVariation]);
     setNewVarName('');
     setNewVarPrice('');
     setNewVarStock('');
+    setVariationErrors({});
+  };
+
+  const startEditVariation = (v: ProductVariation) => {
+    setNewVarName(v.name);
+    setNewVarPrice(v.price.toString());
+    setNewVarStock(v.stock.toString());
+    setEditingVariationId(v.id);
+    setVariationErrors({});
   };
 
   const removeVariation = (id: string) => {
     setVariations(variations.filter(v => v.id !== id));
+    if (editingVariationId === id) {
+        setEditingVariationId(null);
+        setNewVarName('');
+        setNewVarPrice('');
+        setNewVarStock('');
+    }
+  };
+  
+  const copyFromBase = () => {
+      if (formData.price) setNewVarPrice(formData.price.toString());
+      if (formData.stock) setNewVarStock(formData.stock.toString());
+  }
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // Required for some browsers to initiate drag
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault(); // Allow dropping
+    if (draggedIndex === null || draggedIndex === index) return;
+    
+    const newVariations = [...variations];
+    const draggedItem = newVariations[draggedIndex];
+    newVariations.splice(draggedIndex, 1);
+    newVariations.splice(index, 0, draggedItem);
+    
+    setVariations(newVariations);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const handleAddTag = (e: React.KeyboardEvent | React.MouseEvent) => {
@@ -297,11 +368,26 @@ const ProductFormModal = ({
     });
   };
 
+  const generateFallbackImage = (name: string, category: string) => {
+    const bgColor = category === 'Food' ? '#fee2e2' : category === 'Drinks' ? '#e0f2fe' : '#fce7f3';
+    const textColor = category === 'Food' ? '#991b1b' : category === 'Drinks' ? '#075985' : '#831843';
+    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    
+    const svg = `
+      <svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100%" height="100%" fill="${bgColor}"/>
+        <text x="50%" y="45%" font-family="system-ui, -apple-system, sans-serif" font-size="120" fill="${textColor}" text-anchor="middle" dy=".3em" font-weight="bold">${initials}</text>
+        <text x="50%" y="70%" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="${textColor}" text-anchor="middle" opacity="0.6">${category}</text>
+      </svg>
+    `;
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  };
+
   const fetchAiImage = async (name: string, category: string): Promise<string | null> => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      let styleDescription = "Professional studio photography, clean composition, neutral background.";
+      let styleDescription = "Professional studio photography, clean composition, neutral light gray background.";
       if (category === 'Food') {
           styleDescription += " Appetizing, fresh ingredients, warm lighting, delicious presentation.";
       } else if (category === 'Drinks') {
@@ -313,7 +399,8 @@ const ProductFormModal = ({
       const prompt = `Create a high-quality product image for "${name}". 
       Category: ${category}.
       Description: ${styleDescription}
-      Requirements: Photorealistic, 4k resolution, centered subject, white or light gray background for e-commerce consistency, 4:3 aspect ratio.`;
+      Requirements: Photorealistic, 4k resolution, centered subject, white or light gray background for e-commerce consistency, 4:3 aspect ratio.
+      Do not include any text, labels, or watermarks in the image.`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -347,6 +434,9 @@ const ProductFormModal = ({
     const url = await fetchAiImage(formData.name, formData.category || 'Food');
     if (url) {
         setFormData(prev => ({ ...prev, image: url }));
+    } else {
+        const fallback = generateFallbackImage(formData.name, formData.category || 'Food');
+        setFormData(prev => ({ ...prev, image: fallback }));
     }
     setIsGenerating(false);
   };
@@ -391,18 +481,17 @@ const ProductFormModal = ({
 
     let imageUrl = formData.image;
 
-    // If image is empty, generate one
     if (!imageUrl || imageUrl.trim() === '') {
         const generated = await fetchAiImage(formData.name || '', formData.category || 'Food');
         if (generated) {
             imageUrl = generated;
         } else {
-            imageUrl = 'https://picsum.photos/400/300';
+            imageUrl = generateFallbackImage(formData.name || '', formData.category || 'Food');
         }
     }
 
     if (!imageUrl) {
-         imageUrl = 'https://picsum.photos/400/300';
+         imageUrl = generateFallbackImage(formData.name || '', formData.category || 'Food');
     }
 
     onSave({
@@ -548,9 +637,19 @@ const ProductFormModal = ({
 
           {/* Variations Section */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-                <List size={18} className="text-gray-500" />
-                <h4 className="font-semibold text-gray-800">Product Variations</h4>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <List size={18} className="text-gray-500" />
+                    <h4 className="font-semibold text-gray-800">Product Variations</h4>
+                </div>
+                <button 
+                   type="button" 
+                   onClick={copyFromBase}
+                   className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                   title="Copy base price and stock to inputs"
+                >
+                    <Copy size={12} /> Use Base Values
+                </button>
             </div>
             
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
@@ -558,54 +657,96 @@ const ProductFormModal = ({
                     <div className="col-span-3">
                         <input 
                             type="text" 
-                            placeholder="Variation Name (e.g. Large)" 
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            placeholder="Variant Name (e.g. Small, Red)" 
+                            className={`w-full px-3 py-2 border ${variationErrors.name ? 'border-red-500' : 'border-gray-300'} rounded-lg text-sm outline-none`}
                             value={newVarName}
-                            onChange={e => setNewVarName(e.target.value)}
+                            onChange={e => { setNewVarName(e.target.value); if(variationErrors.name) setVariationErrors({...variationErrors, name: ''}) }}
                         />
                     </div>
                     <div className="col-span-2">
                          <input 
                             type="number" 
                             placeholder="Price" 
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className={`w-full px-3 py-2 border ${variationErrors.price ? 'border-red-500' : 'border-gray-300'} rounded-lg text-sm outline-none`}
                             value={newVarPrice}
-                            onChange={e => setNewVarPrice(e.target.value)}
+                            onChange={e => { setNewVarPrice(e.target.value); if(variationErrors.price) setVariationErrors({...variationErrors, price: ''}) }}
                         />
                     </div>
                     <div className="col-span-1">
                          <input 
                             type="number" 
                             placeholder="Stock" 
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            className={`w-full px-3 py-2 border ${variationErrors.stock ? 'border-red-500' : 'border-gray-300'} rounded-lg text-sm outline-none`}
                             value={newVarStock}
-                            onChange={e => setNewVarStock(e.target.value)}
+                            onChange={e => { setNewVarStock(e.target.value); if(variationErrors.stock) setVariationErrors({...variationErrors, stock: ''}) }}
                         />
                     </div>
                     <button 
                         type="button"
-                        onClick={addVariation}
-                        className="col-span-1 bg-blue-600 text-white rounded-lg flex items-center justify-center hover:bg-blue-700 transition-colors"
+                        onClick={handleAddOrUpdateVariation}
+                        className={`col-span-1 ${editingVariationId ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} text-white rounded-lg flex items-center justify-center transition-colors`}
+                        title={editingVariationId ? "Update Variation" : "Add Variation"}
                     >
-                        <Plus size={18} />
+                        {editingVariationId ? <Check size={18} /> : <Plus size={18} />}
                     </button>
                 </div>
+                {(variationErrors.name || variationErrors.price || variationErrors.stock) && (
+                    <div className="flex gap-4 text-xs text-red-500 px-1">
+                        {variationErrors.name && <span>{variationErrors.name}</span>}
+                        {variationErrors.price && <span>{variationErrors.price}</span>}
+                        {variationErrors.stock && <span>{variationErrors.stock}</span>}
+                    </div>
+                )}
 
                 {variations.length > 0 ? (
-                    <div className="space-y-2 mt-2">
-                        {variations.map((v) => (
-                            <div key={v.id} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
-                                <span className="text-sm font-medium text-gray-700 w-1/3 truncate">{v.name}</span>
-                                <span className="text-sm text-gray-500 w-1/4">${v.price.toFixed(2)}</span>
-                                <span className="text-sm text-gray-500 w-1/4">Qty: {v.stock}</span>
-                                <button type="button" onClick={() => removeVariation(v.id)} className="text-red-500 hover:text-red-700">
-                                    <Trash2 size={16} />
-                                </button>
+                    <div className="bg-white rounded border border-gray-200 divide-y divide-gray-100 overflow-hidden mt-2">
+                        {variations.map((v, index) => (
+                            <div 
+                                key={v.id} 
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, index)}
+                                onDragOver={(e) => handleDragOver(e, index)}
+                                onDragEnd={handleDragEnd}
+                                className={`flex items-center justify-between p-3 transition-all
+                                    ${editingVariationId === v.id ? 'bg-blue-50/50 border-blue-200' : 'hover:bg-gray-50 border-gray-200'}
+                                    ${draggedIndex === index ? 'opacity-40 border-dashed border-2 border-blue-300 bg-gray-50' : 'bg-white border-b'}
+                                `}
+                            >
+                                <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                                     <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" onMouseDown={e => e.stopPropagation()}>
+                                        <GripVertical size={16} />
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2 items-center flex-1 cursor-pointer" onClick={() => startEditVariation(v)}>
+                                        <span className="text-sm font-medium text-gray-800 truncate" title={v.name}>{v.name}</span>
+                                        <span className="text-sm text-gray-600">${v.price.toFixed(2)}</span>
+                                        <span className="text-sm text-gray-600">Qty: {v.stock}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        type="button"
+                                        onClick={() => startEditVariation(v)}
+                                        className="text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50"
+                                        title="Edit"
+                                    >
+                                        <Pencil size={14} />
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => removeVariation(v.id)} 
+                                        className="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50"
+                                        title="Remove"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <p className="text-xs text-gray-400 text-center py-2">No variations added yet.</p>
+                    <p className="text-xs text-gray-400 text-center py-4 border-2 border-dashed border-gray-100 rounded">
+                        No variations added. Products with variations will force selection at checkout.
+                    </p>
                 )}
             </div>
           </div>
@@ -884,7 +1025,7 @@ const AdminLayout: React.FC = () => {
                                             <div>
                                                <p className="font-semibold text-gray-800 text-sm">{product.name}</p>
                                                {product.variations && product.variations.length > 0 && (
-                                                  <p className="text-xs text-gray-500">{product.variations.length} variations</p>
+                                                  <p className="text-xs text-blue-600 font-medium">{product.variations.length} variations</p>
                                                )}
                                             </div>
                                          </div>
@@ -895,7 +1036,10 @@ const AdminLayout: React.FC = () => {
                                          </span>
                                       </td>
                                       <td className="px-6 py-4 text-right font-medium text-gray-900">
-                                         ${product.price.toFixed(2)}
+                                          {product.variations && product.variations.length > 0 
+                                            ? `$${Math.min(product.price, ...product.variations.map(v => v.price)).toFixed(2)} - $${Math.max(product.price, ...product.variations.map(v => v.price)).toFixed(2)}`
+                                            : `$${product.price.toFixed(2)}`
+                                          }
                                       </td>
                                       <td className="px-6 py-4 text-right">
                                          <span className={`font-medium ${product.stock < 10 ? 'text-red-600' : 'text-green-600'}`}>
