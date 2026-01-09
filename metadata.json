@@ -1,0 +1,5 @@
+{
+  "name": "Kins' Kitchen",
+  "description": "A comprehensive Point of Sale application with a customer-facing register and an administrative dashboard for inventory and sales management.",
+  "requestFramePermissions": []
+}
