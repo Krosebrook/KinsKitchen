@@ -14,6 +14,7 @@ export interface Product {
   stock: number;
   margin: number;
   variations?: ProductVariation[];
+  tags?: string[];
 }
 
 export interface CartItem extends Product {

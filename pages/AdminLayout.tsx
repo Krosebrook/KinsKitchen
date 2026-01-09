@@ -1,18 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
-  Layers, 
   ShoppingCart, 
   Users, 
-  Building2, 
   BarChart2, 
   Settings, 
   LogOut,
   Search,
-  Filter,
   Plus,
-  MoreHorizontal,
   DollarSign,
   AlertTriangle,
   X,
@@ -22,9 +18,10 @@ import {
   Upload,
   Image as ImageIcon,
   List,
-  Sparkles
+  Sparkles,
+  Menu
 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
 import { MOCK_STATS, RECENT_ORDERS, CHART_DATA } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -230,15 +227,21 @@ const ProductFormModal = ({
       stock: 0,
       margin: 0,
       image: '',
-      variations: []
+      variations: [],
+      tags: []
     }
   );
+  
+  const [errors, setErrors] = useState<Record<string, string>>({});
   
   // Variations State
   const [variations, setVariations] = useState<ProductVariation[]>(product?.variations || []);
   const [newVarName, setNewVarName] = useState('');
   const [newVarPrice, setNewVarPrice] = useState('');
   const [newVarStock, setNewVarStock] = useState('');
+
+  // Tags State
+  const [tagInput, setTagInput] = useState('');
 
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -271,6 +274,27 @@ const ProductFormModal = ({
 
   const removeVariation = (id: string) => {
     setVariations(variations.filter(v => v.id !== id));
+  };
+
+  const handleAddTag = (e: React.KeyboardEvent | React.MouseEvent) => {
+    if (e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter') return;
+    e.preventDefault();
+
+    const trimmed = tagInput.trim();
+    if (!trimmed) return;
+    
+    const currentTags = formData.tags || [];
+    if (!currentTags.includes(trimmed)) {
+        setFormData({ ...formData, tags: [...currentTags, trimmed] });
+    }
+    setTagInput('');
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setFormData({ 
+        ...formData, 
+        tags: (formData.tags || []).filter(t => t !== tagToRemove) 
+    });
   };
 
   const fetchAiImage = async (name: string, category: string): Promise<string | null> => {
@@ -327,8 +351,42 @@ const ProductFormModal = ({
     setIsGenerating(false);
   };
 
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    
+    if (!formData.name?.trim()) {
+      newErrors.name = "Product name is required";
+    }
+
+    if (formData.price === undefined || isNaN(formData.price)) {
+        newErrors.price = "Price is required";
+    } else if (formData.price < 0) {
+        newErrors.price = "Price cannot be negative";
+    }
+
+    if (formData.stock === undefined || isNaN(formData.stock)) {
+        newErrors.stock = "Stock level is required";
+    } else if (formData.stock < 0) {
+        newErrors.stock = "Stock cannot be negative";
+    } else if (!Number.isInteger(formData.stock)) {
+        newErrors.stock = "Stock must be a whole number";
+    }
+
+    if (formData.margin !== undefined && !isNaN(formData.margin)) {
+       if (formData.margin < 0 || formData.margin > 100) {
+           newErrors.margin = "Margin must be between 0% and 100%";
+       }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) return;
+
     setIsGenerating(true);
 
     let imageUrl = formData.image;
@@ -355,7 +413,8 @@ const ProductFormModal = ({
       stock: Number(formData.stock) || 0,
       margin: Number(formData.margin) || 0,
       image: imageUrl,
-      variations: variations
+      variations: variations,
+      tags: formData.tags || []
     } as Product);
     
     setIsGenerating(false);
@@ -378,12 +437,15 @@ const ProductFormModal = ({
                 <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
                 <input 
                   type="text" 
-                  required
                   value={formData.name}
-                  onChange={e => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  onChange={e => {
+                    setFormData({...formData, name: e.target.value});
+                    if (errors.name) setErrors({...errors, name: ''});
+                  }}
+                  className={`w-full px-3 py-2 border ${errors.name ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'} rounded-lg focus:ring-2 outline-none transition-all`}
                   placeholder="e.g. Cheese Burger"
                 />
+                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -405,11 +467,14 @@ const ProductFormModal = ({
                       type="number" 
                       step="0.01"
                       min="0"
-                      required
                       value={formData.price}
-                      onChange={e => setFormData({...formData, price: parseFloat(e.target.value)})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      onChange={e => {
+                        setFormData({...formData, price: parseFloat(e.target.value)});
+                        if (errors.price) setErrors({...errors, price: ''});
+                      }}
+                      className={`w-full px-3 py-2 border ${errors.price ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'} rounded-lg focus:ring-2 outline-none`}
                     />
+                    {errors.price && <p className="text-red-500 text-xs mt-1">{errors.price}</p>}
                  </div>
               </div>
 
@@ -419,11 +484,14 @@ const ProductFormModal = ({
                     <input 
                       type="number" 
                       min="0"
-                      required
                       value={formData.stock}
-                      onChange={e => setFormData({...formData, stock: parseInt(e.target.value)})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      onChange={e => {
+                        setFormData({...formData, stock: parseInt(e.target.value)});
+                        if (errors.stock) setErrors({...errors, stock: ''});
+                      }}
+                      className={`w-full px-3 py-2 border ${errors.stock ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'} rounded-lg focus:ring-2 outline-none`}
                     />
+                    {errors.stock && <p className="text-red-500 text-xs mt-1">{errors.stock}</p>}
                  </div>
                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Margin (%)</label>
@@ -432,10 +500,47 @@ const ProductFormModal = ({
                       min="0"
                       max="100"
                       value={formData.margin}
-                      onChange={e => setFormData({...formData, margin: parseFloat(e.target.value)})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                      onChange={e => {
+                        setFormData({...formData, margin: parseFloat(e.target.value)});
+                        if (errors.margin) setErrors({...errors, margin: ''});
+                      }}
+                      className={`w-full px-3 py-2 border ${errors.margin ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-blue-500'} rounded-lg focus:ring-2 outline-none`}
                     />
+                    {errors.margin && <p className="text-red-500 text-xs mt-1">{errors.margin}</p>}
                  </div>
+              </div>
+
+              {/* Tags Input Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                <div className="flex gap-2 mb-2">
+                    <input 
+                        type="text" 
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={handleAddTag}
+                        placeholder="Add a tag (e.g. Vegan, Gluten-Free)"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    />
+                    <button 
+                        type="button"
+                        onClick={handleAddTag}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+                    >
+                        Add
+                    </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {formData.tags?.map((tag, index) => (
+                        <span key={index} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                            {tag}
+                            <button type="button" onClick={() => removeTag(tag)} className="hover:text-blue-900 ml-1"><X size={12} /></button>
+                        </span>
+                    ))}
+                    {(!formData.tags || formData.tags.length === 0) && (
+                        <span className="text-xs text-gray-400 italic">No tags added</span>
+                    )}
+                </div>
               </div>
           </div>
 
@@ -610,53 +715,30 @@ const ProductFormModal = ({
   );
 };
 
-// --- Delete Confirmation Modal ---
-const DeleteConfirmationModal = ({
-  product,
-  onClose,
-  onConfirm
-}: {
-  product: Product,
-  onClose: () => void,
-  onConfirm: () => void
-}) => {
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="p-6 text-center">
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Trash2 className="text-red-600" size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Product?</h3>
-            <p className="text-gray-500 mb-6">
-                Are you sure you want to delete <span className="font-semibold text-gray-800">{product.name}</span>? This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-                <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">Cancel</button>
-                <button onClick={onConfirm} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-sm">Delete</button>
-            </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// --- Products Component ---
-const ProductsView = () => {
-  const { products, updateProduct, addProduct, deleteProduct } = useStore();
-  const [filterText, setFilterText] = useState('');
+const AdminLayout: React.FC = () => {
+  const { products, deleteProduct, addProduct, updateProduct } = useStore();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  
+  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [deleteProductData, setDeleteProductData] = useState<Product | null>(null);
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(filterText.toLowerCase()));
+  const isProductsPage = location.pathname.includes('/products');
+
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(productSearch.toLowerCase()) || 
+    p.category.toLowerCase().includes(productSearch.toLowerCase())
+  );
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
     setIsModalOpen(true);
   };
 
-  const handleAdd = () => {
+  const handleAddNew = () => {
     setEditingProduct(null);
     setIsModalOpen(true);
   };
@@ -668,185 +750,193 @@ const ProductsView = () => {
       addProduct(product);
     }
     setIsModalOpen(false);
+    setEditingProduct(null);
   };
-
-  const handleDeleteClick = (product: Product) => {
-    setDeleteProductData(product);
-  };
-
-  const confirmDelete = () => {
-    if (deleteProductData) {
-      deleteProduct(deleteProductData.id);
-      setDeleteProductData(null);
-    }
-  };
+  
+  const handleDelete = (id: string) => {
+      if(window.confirm('Delete this product?')) {
+          deleteProduct(id);
+      }
+  }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-           <h2 className="text-3xl font-bold text-gray-800">Products</h2>
-           <p className="text-gray-500 mt-1">Manage your product catalog</p>
-        </div>
-        <button 
-          onClick={handleAdd}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus size={20} />
-          Add Product
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search products..." 
-            value={filterText}
-            onChange={e => setFilterText(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50">
-          <Filter size={18} />
-          <span>All Categories</span>
-        </button>
-      </div>
-
-      {/* Product Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filtered.map(product => (
-          <div key={product.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
-            <div className="relative h-48 bg-gray-100">
-               <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-               <div className="absolute top-2 right-2 flex gap-2">
-                  <button 
-                      onClick={() => handleEdit(product)}
-                      className="p-1.5 bg-white/80 backdrop-blur-sm rounded-full hover:bg-blue-600 hover:text-white text-gray-600 transition-colors shadow-sm"
-                      title="Edit"
-                  >
-                      <Pencil size={18} />
-                  </button>
-                  <button 
-                      onClick={() => handleDeleteClick(product)}
-                      className="p-1.5 bg-white/80 backdrop-blur-sm rounded-full hover:bg-red-600 hover:text-white text-red-500 transition-colors shadow-sm"
-                      title="Delete"
-                  >
-                      <Trash2 size={18} />
-                  </button>
-               </div>
-            </div>
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                   <h3 className="font-bold text-gray-900 text-lg leading-tight">{product.name}</h3>
-                   <span className="text-sm text-gray-500">{product.category}</span>
-                </div>
-                <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded-full">{product.stock}</span>
-              </div>
-              
-              <div className="flex items-end justify-between mt-4">
-                 <div>
-                    <p className="text-2xl font-bold text-green-600">${product.price.toFixed(2)}</p>
-                    {product.variations && product.variations.length > 0 && (
-                        <p className="text-xs text-blue-600 font-medium mt-0.5">{product.variations.length} Variants</p>
-                    )}
-                 </div>
-                 <p className="text-xs text-gray-400">Inventory Co.</p>
-              </div>
-            </div>
+    <div className="flex h-screen bg-gray-100 font-sans">
+      {/* Sidebar - Desktop */}
+      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-gray-200 z-10">
+        <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+            A
           </div>
-        ))}
-      </div>
-      
-      {isModalOpen && (
-        <ProductFormModal 
-          product={editingProduct} 
-          onClose={() => setIsModalOpen(false)} 
-          onSave={handleSave} 
-        />
-      )}
-
-      {deleteProductData && (
-        <DeleteConfirmationModal 
-          product={deleteProductData}
-          onClose={() => setDeleteProductData(null)}
-          onConfirm={confirmDelete}
-        />
-      )}
-    </div>
-  );
-};
-
-
-// --- Admin Layout Shell ---
-const AdminLayout = () => {
-  const location = useLocation();
-  const currentPath = location.pathname.split('/').pop() || 'dashboard'; // Simple logic for demo
-
-  // If path is exactly /admin, default to dashboard view
-  const isProducts = location.pathname.includes('products');
-
-  const navItems = [
-    { icon: <LayoutDashboard size={20} />, label: 'Dashboard', path: '/admin' },
-    { icon: <Package size={20} />, label: 'Products', path: '/admin/products' },
-    { icon: <Layers size={20} />, label: 'Categories', path: '#' },
-    { icon: <ShoppingCart size={20} />, label: 'Orders', path: '#' },
-    { icon: <Users size={20} />, label: 'Customers', path: '#' },
-    { icon: <Building2 size={20} />, label: 'Organizations', path: '#' },
-    { icon: <BarChart2 size={20} />, label: 'Analytics', path: '#' },
-    { icon: <Settings size={20} />, label: 'Settings', path: '#' },
-  ];
-
-  return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
-        <div className="h-20 flex items-center px-6 border-b border-gray-200">
-           <div className="flex items-center gap-2 text-gray-900">
-              <div className="bg-gray-900 text-white p-1.5 rounded-lg">
-                  <Building2 size={20} />
-              </div>
-              <span className="font-bold text-xl tracking-tight">POS Admin</span>
-           </div>
+          <span className="font-bold text-xl text-gray-800">AdminPanel</span>
         </div>
-
+        
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map((item, idx) => {
-            const isActive = item.path === location.pathname || (item.path === '/admin' && location.pathname === '/admin/');
-            return (
-              <Link
-                key={idx}
-                to={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${
-                  isActive 
-                    ? 'bg-blue-50 text-blue-700' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <span className={isActive ? 'text-blue-600' : 'text-gray-500'}>{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-4 border-t border-gray-200">
-          <Link to="/" className="flex items-center gap-2 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium">
-             <LogOut size={20} />
-             <span>Back to POS</span>
+          <Link to="/admin" className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${!isProductsPage ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+            <LayoutDashboard size={20} />
+            Dashboard
           </Link>
-        </div>
+          <Link to="/admin/products" className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors font-medium ${isProductsPage ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}>
+            <Package size={20} />
+            Products
+          </Link>
+          <div className="pt-4 mt-4 border-t border-gray-100">
+             <Link to="/" className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors font-medium">
+                <LogOut size={20} />
+                Exit to POS
+             </Link>
+          </div>
+        </nav>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto">
-         <div className="p-8 max-w-7xl mx-auto">
-            {isProducts ? <ProductsView /> : <DashboardView />}
-         </div>
-      </main>
+      {/* Mobile Menu Overlay */}
+       {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 lg:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
+           <aside className="w-64 h-full bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                 <span className="font-bold text-lg text-gray-800">Menu</span>
+                 <button onClick={() => setIsMobileMenuOpen(false)}><X size={24} /></button>
+              </div>
+              <nav className="p-4 space-y-2">
+                 <Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-lg ${!isProductsPage ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}>
+                    <LayoutDashboard size={20} /> Dashboard
+                 </Link>
+                 <Link to="/admin/products" onClick={() => setIsMobileMenuOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-lg ${isProductsPage ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}>
+                    <Package size={20} /> Products
+                 </Link>
+                  <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-600">
+                    <LogOut size={20} /> Exit to POS
+                 </Link>
+              </nav>
+           </aside>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0">
+           <div className="flex items-center gap-3">
+              <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                <Menu size={24} />
+              </button>
+              <h1 className="text-xl font-bold text-gray-800">{isProductsPage ? 'Products' : 'Dashboard'}</h1>
+           </div>
+           <div className="flex items-center gap-4">
+              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold text-sm">
+                JD
+              </div>
+           </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+           {!isProductsPage ? (
+              <DashboardView /> 
+           ) : (
+              <div className="space-y-6 animate-fade-in">
+                 {/* Products Header Actions */}
+                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="relative w-full sm:w-96">
+                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                       <input 
+                          type="text" 
+                          placeholder="Search products..." 
+                          value={productSearch}
+                          onChange={(e) => setProductSearch(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                       />
+                    </div>
+                    <button 
+                      onClick={handleAddNew}
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                    >
+                       <Plus size={20} />
+                       <span>Add Product</span>
+                    </button>
+                 </div>
+
+                 {/* Products List */}
+                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                       <table className="w-full text-left">
+                          <thead>
+                             <tr className="bg-gray-50 border-b border-gray-200">
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Product</th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Category</th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Price</th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Stock</th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Actions</th>
+                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                             {filteredProducts.length === 0 ? (
+                                <tr>
+                                   <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                                      No products found matching your search.
+                                   </td>
+                                </tr>
+                             ) : (
+                                filteredProducts.map((product) => (
+                                   <tr key={product.id} className="group hover:bg-gray-50/50 transition-colors">
+                                      <td className="px-6 py-4">
+                                         <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-lg bg-gray-100 overflow-hidden border border-gray-200 shrink-0">
+                                               <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div>
+                                               <p className="font-semibold text-gray-800 text-sm">{product.name}</p>
+                                               {product.variations && product.variations.length > 0 && (
+                                                  <p className="text-xs text-gray-500">{product.variations.length} variations</p>
+                                               )}
+                                            </div>
+                                         </div>
+                                      </td>
+                                      <td className="px-6 py-4">
+                                         <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                            {product.category}
+                                         </span>
+                                      </td>
+                                      <td className="px-6 py-4 text-right font-medium text-gray-900">
+                                         ${product.price.toFixed(2)}
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                         <span className={`font-medium ${product.stock < 10 ? 'text-red-600' : 'text-green-600'}`}>
+                                            {product.stock}
+                                         </span>
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                         <div className="flex items-center justify-end gap-2">
+                                            <button 
+                                              onClick={() => handleEdit(product)}
+                                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
+                                               <Pencil size={18} />
+                                            </button>
+                                            <button 
+                                              onClick={() => handleDelete(product.id)}
+                                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            >
+                                               <Trash2 size={18} />
+                                            </button>
+                                         </div>
+                                      </td>
+                                   </tr>
+                                ))
+                             )}
+                          </tbody>
+                       </table>
+                    </div>
+                 </div>
+              </div>
+           )}
+        </main>
+      </div>
+
+      {isModalOpen && (
+        <ProductFormModal 
+           product={editingProduct} 
+           onClose={() => { setIsModalOpen(false); setEditingProduct(null); }} 
+           onSave={handleSave}
+        />
+      )}
     </div>
   );
 };
