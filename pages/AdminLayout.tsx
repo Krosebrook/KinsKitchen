@@ -22,7 +22,11 @@ import {
   Menu,
   Copy,
   Check,
-  GripVertical
+  GripVertical,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Filter
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../context/StoreContext';
@@ -251,14 +255,20 @@ const ProductFormModal = ({
   // Tags State
   const [tagInput, setTagInput] = useState('');
 
+  // AI & Upload State
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [negativePrompt, setNegativePrompt] = useState('');
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setIsUploading(true);
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormData({ ...formData, image: reader.result as string });
+        setIsUploading(false);
       };
       reader.readAsDataURL(file);
     }
@@ -266,9 +276,31 @@ const ProductFormModal = ({
 
   const validateVariation = () => {
       const errors: Record<string, string> = {};
-      if (!newVarName.trim()) errors.name = "Name required";
-      if (!newVarPrice || isNaN(parseFloat(newVarPrice)) || parseFloat(newVarPrice) < 0) errors.price = "Invalid price";
-      if (!newVarStock || isNaN(parseInt(newVarStock)) || parseInt(newVarStock) < 0) errors.stock = "Invalid stock";
+      
+      if (!newVarName.trim()) {
+          errors.name = "Name required";
+      }
+
+      const price = parseFloat(newVarPrice);
+      if (!newVarPrice) {
+          errors.price = "Price required";
+      } else if (isNaN(price)) {
+          errors.price = "Price must be a number";
+      } else if (price < 0) {
+          errors.price = "Price must be positive";
+      }
+
+      const stock = parseInt(newVarStock);
+      if (!newVarStock) {
+          errors.stock = "Stock required";
+      } else if (isNaN(stock)) {
+           errors.stock = "Stock must be a number";
+      } else if (stock < 0) {
+          errors.stock = "Stock cannot be negative";
+      } else if (!Number.isInteger(stock)) {
+          errors.stock = "Stock must be an integer";
+      }
+
       setVariationErrors(errors);
       return Object.keys(errors).length === 0;
   };
@@ -323,20 +355,31 @@ const ProductFormModal = ({
       if (formData.stock) setNewVarStock(formData.stock.toString());
   }
 
+  const sortVariations = (criteria: 'name' | 'price' | 'stock') => {
+      setVariations(prev => [...prev].sort((a, b) => {
+          if (criteria === 'name') return a.name.localeCompare(b.name);
+          return a[criteria] - b[criteria];
+      }));
+  };
+
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = "move";
-    // Required for some browsers to initiate drag
     e.dataTransfer.setData('text/plain', index.toString());
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault(); // Allow dropping
+    e.preventDefault(); // Essential to allow dropping
+    e.dataTransfer.dropEffect = "move";
+    
     if (draggedIndex === null || draggedIndex === index) return;
     
     const newVariations = [...variations];
     const draggedItem = newVariations[draggedIndex];
+    
+    // Remove from old index
     newVariations.splice(draggedIndex, 1);
+    // Insert at new index
     newVariations.splice(index, 0, draggedItem);
     
     setVariations(newVariations);
@@ -371,13 +414,29 @@ const ProductFormModal = ({
   const generateFallbackImage = (name: string, category: string) => {
     const bgColor = category === 'Food' ? '#fee2e2' : category === 'Drinks' ? '#e0f2fe' : '#fce7f3';
     const textColor = category === 'Food' ? '#991b1b' : category === 'Drinks' ? '#075985' : '#831843';
-    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
     
+    // Generate clearer initials
+    const initials = name
+      .split(' ')
+      .filter(w => w.length > 0)
+      .map(n => n[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase() || '??';
+    
+    // SVG with gradient and clearer text
     const svg = `
       <svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" fill="${bgColor}"/>
-        <text x="50%" y="45%" font-family="system-ui, -apple-system, sans-serif" font-size="120" fill="${textColor}" text-anchor="middle" dy=".3em" font-weight="bold">${initials}</text>
-        <text x="50%" y="70%" font-family="system-ui, -apple-system, sans-serif" font-size="40" fill="${textColor}" text-anchor="middle" opacity="0.6">${category}</text>
+        <defs>
+          <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:${bgColor};stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#ffffff;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grad1)"/>
+        <circle cx="400" cy="300" r="200" fill="white" fill-opacity="0.3"/>
+        <text x="50%" y="45%" font-family="system-ui, -apple-system, sans-serif" font-size="140" fill="${textColor}" text-anchor="middle" dy=".3em" font-weight="800">${initials}</text>
+        <text x="50%" y="75%" font-family="system-ui, -apple-system, sans-serif" font-size="48" fill="${textColor}" text-anchor="middle" font-weight="500" letter-spacing="2">${category.toUpperCase()}</text>
       </svg>
     `;
     return `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -388,19 +447,27 @@ const ProductFormModal = ({
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       let styleDescription = "Professional studio photography, clean composition, neutral light gray background.";
-      if (category === 'Food') {
-          styleDescription += " Appetizing, fresh ingredients, warm lighting, delicious presentation.";
-      } else if (category === 'Drinks') {
-           styleDescription += " Refreshing, condensation on glass (if cold), steam (if hot), vibrant liquid colors, crystal clear glass.";
-      } else if (category === 'Desserts') {
-           styleDescription += " Indulgent, elegant plating, sweet texture details, dusting of powder or glaze.";
+      
+      if (!customPrompt) {
+        if (category === 'Food') {
+            styleDescription += " Appetizing, fresh ingredients, warm lighting, delicious presentation.";
+        } else if (category === 'Drinks') {
+             styleDescription += " Refreshing, condensation on glass (if cold), steam (if hot), vibrant liquid colors, crystal clear glass.";
+        } else if (category === 'Desserts') {
+             styleDescription += " Indulgent, elegant plating, sweet texture details, dusting of powder or glaze.";
+        }
       }
 
-      const prompt = `Create a high-quality product image for "${name}". 
+      let prompt = `Create a high-quality product image for "${name}". 
       Category: ${category}.
-      Description: ${styleDescription}
+      ${customPrompt ? `User Customization: ${customPrompt}.` : ''}
+      Default Style Reference: ${styleDescription}
       Requirements: Photorealistic, 4k resolution, centered subject, white or light gray background for e-commerce consistency, 4:3 aspect ratio.
       Do not include any text, labels, or watermarks in the image.`;
+
+      if (negativePrompt && negativePrompt.trim() !== '') {
+          prompt += ` Exclude the following elements: ${negativePrompt}.`;
+      }
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -431,13 +498,22 @@ const ProductFormModal = ({
   const handleGenerateClick = async () => {
     if (!formData.name) return;
     setIsGenerating(true);
-    const url = await fetchAiImage(formData.name, formData.category || 'Food');
-    if (url) {
-        setFormData(prev => ({ ...prev, image: url }));
-    } else {
+    
+    try {
+        const url = await fetchAiImage(formData.name, formData.category || 'Food');
+        if (url) {
+            setFormData(prev => ({ ...prev, image: url }));
+        } else {
+            // Fallback if AI returns explicit null
+            const fallback = generateFallbackImage(formData.name, formData.category || 'Food');
+            setFormData(prev => ({ ...prev, image: fallback }));
+        }
+    } catch (e) {
+        // Fallback on error
         const fallback = generateFallbackImage(formData.name, formData.category || 'Food');
         setFormData(prev => ({ ...prev, image: fallback }));
     }
+    
     setIsGenerating(false);
   };
 
@@ -481,11 +557,16 @@ const ProductFormModal = ({
 
     let imageUrl = formData.image;
 
+    // Logic to ensure an image exists
     if (!imageUrl || imageUrl.trim() === '') {
-        const generated = await fetchAiImage(formData.name || '', formData.category || 'Food');
-        if (generated) {
-            imageUrl = generated;
-        } else {
+        try {
+            const generated = await fetchAiImage(formData.name || '', formData.category || 'Food');
+            if (generated) {
+                imageUrl = generated;
+            } else {
+                imageUrl = generateFallbackImage(formData.name || '', formData.category || 'Food');
+            }
+        } catch {
             imageUrl = generateFallbackImage(formData.name || '', formData.category || 'Food');
         }
     }
@@ -511,10 +592,33 @@ const ProductFormModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col relative">
+        
+        {/* Loading Overlay for AI Generation */}
+        {isGenerating && (
+            <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center animate-in fade-in duration-200">
+                <div className="flex flex-col items-center gap-4 p-8 bg-white rounded-2xl shadow-2xl border border-purple-100 transform transition-all scale-100">
+                    <div className="relative w-20 h-20">
+                        <svg className="animate-spin w-full h-full text-purple-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <Sparkles className="w-8 h-8 text-purple-600 animate-pulse" />
+                        </div>
+                    </div>
+                    <div className="text-center space-y-2">
+                        <h3 className="text-xl font-bold text-gray-900 bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">Creating Magic</h3>
+                        <p className="text-gray-500 font-medium">AI is generating your product image...</p>
+                        <p className="text-xs text-gray-400">This usually takes about 5-10 seconds</p>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
           <h3 className="font-bold text-lg text-gray-800">{product ? 'Edit Product' : 'Add New Product'}</h3>
-          <button onClick={onClose} disabled={isGenerating} className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50">
+          <button onClick={onClose} disabled={isGenerating || isUploading} className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50">
             <X size={20} />
           </button>
         </div>
@@ -642,14 +746,28 @@ const ProductFormModal = ({
                     <List size={18} className="text-gray-500" />
                     <h4 className="font-semibold text-gray-800">Product Variations</h4>
                 </div>
-                <button 
-                   type="button" 
-                   onClick={copyFromBase}
-                   className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                   title="Copy base price and stock to inputs"
-                >
-                    <Copy size={12} /> Use Base Values
-                </button>
+                <div className="flex items-center gap-2">
+                    {variations.length > 1 && (
+                        <div className="relative group">
+                            <button type="button" className="text-xs text-gray-600 hover:text-gray-800 font-medium flex items-center gap-1 border border-gray-200 rounded px-2 py-1 bg-white">
+                                <Filter size={12} /> Sort
+                            </button>
+                            <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 shadow-lg rounded-lg py-1 w-32 hidden group-hover:block z-20">
+                                <button type="button" onClick={() => sortVariations('name')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-gray-700">Name</button>
+                                <button type="button" onClick={() => sortVariations('price')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-gray-700">Price</button>
+                                <button type="button" onClick={() => sortVariations('stock')} className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 text-gray-700">Stock</button>
+                            </div>
+                        </div>
+                    )}
+                    <button 
+                    type="button" 
+                    onClick={copyFromBase}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 border border-blue-100 bg-blue-50 rounded px-2 py-1"
+                    title="Copy base price and stock to inputs"
+                    >
+                        <Copy size={12} /> Use Base Values
+                    </button>
+                </div>
             </div>
             
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
@@ -691,15 +809,15 @@ const ProductFormModal = ({
                     </button>
                 </div>
                 {(variationErrors.name || variationErrors.price || variationErrors.stock) && (
-                    <div className="flex gap-4 text-xs text-red-500 px-1">
-                        {variationErrors.name && <span>{variationErrors.name}</span>}
-                        {variationErrors.price && <span>{variationErrors.price}</span>}
-                        {variationErrors.stock && <span>{variationErrors.stock}</span>}
+                    <div className="flex flex-col gap-1 text-xs text-red-500 px-1">
+                        {variationErrors.name && <span>• {variationErrors.name}</span>}
+                        {variationErrors.price && <span>• {variationErrors.price}</span>}
+                        {variationErrors.stock && <span>• {variationErrors.stock}</span>}
                     </div>
                 )}
 
                 {variations.length > 0 ? (
-                    <div className="bg-white rounded border border-gray-200 divide-y divide-gray-100 overflow-hidden mt-2">
+                    <div className="bg-white rounded border border-gray-200 divide-y divide-gray-100 overflow-hidden mt-2 relative">
                         {variations.map((v, index) => (
                             <div 
                                 key={v.id} 
@@ -707,13 +825,13 @@ const ProductFormModal = ({
                                 onDragStart={(e) => handleDragStart(e, index)}
                                 onDragOver={(e) => handleDragOver(e, index)}
                                 onDragEnd={handleDragEnd}
-                                className={`flex items-center justify-between p-3 transition-all
+                                className={`flex items-center justify-between p-3 transition-all duration-200
                                     ${editingVariationId === v.id ? 'bg-blue-50/50 border-blue-200' : 'hover:bg-gray-50 border-gray-200'}
-                                    ${draggedIndex === index ? 'opacity-40 border-dashed border-2 border-blue-300 bg-gray-50' : 'bg-white border-b'}
+                                    ${draggedIndex === index ? 'opacity-30 bg-gray-100 scale-[0.98]' : 'bg-white border-b last:border-0'}
                                 `}
                             >
                                 <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                                     <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600" onMouseDown={e => e.stopPropagation()}>
+                                     <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1" onMouseDown={e => e.stopPropagation()}>
                                         <GripVertical size={16} />
                                     </div>
                                     <div className="grid grid-cols-3 gap-2 items-center flex-1 cursor-pointer" onClick={() => startEditVariation(v)}>
@@ -784,8 +902,8 @@ const ProductFormModal = ({
               )}
 
               {/* Controls */}
-              <div className="flex gap-2">
-                 <div className="relative flex-1">
+              <div className="space-y-3">
+                 <div className="relative">
                    <input 
                       type="text" 
                       value={formData.image}
@@ -794,35 +912,59 @@ const ProductFormModal = ({
                       placeholder="Paste image URL..."
                     />
                  </div>
-                 
-                 <button 
-                    type="button"
-                    onClick={handleGenerateClick}
-                    disabled={isGenerating || !formData.name}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-200 text-purple-700 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors text-sm font-medium whitespace-nowrap disabled:opacity-50"
-                 >
-                    {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                    {isGenerating ? "Generating..." : "Generate AI"}
-                 </button>
 
-                 <input 
-                    type="file"
-                    id="image-upload"
-                    className="hidden"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                 />
-                 <label 
-                    htmlFor="image-upload"
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors text-sm font-medium whitespace-nowrap"
-                 >
-                    <Upload size={18} />
-                    Upload
-                 </label>
+                 {/* AI Generation Controls */}
+                 <div className="p-3 bg-purple-50 rounded-lg border border-purple-100 space-y-2">
+                    <label className="text-xs font-semibold text-purple-800 flex items-center gap-1">
+                        <Sparkles size={12} /> AI Image Generation
+                    </label>
+                    <div className="space-y-2">
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                value={customPrompt}
+                                onChange={(e) => setCustomPrompt(e.target.value)}
+                                placeholder="Custom prompt (e.g. specific ingredients, lighting, style)..."
+                                className="flex-1 px-3 py-2 border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-white placeholder-purple-300"
+                            />
+                            <button 
+                                type="button"
+                                onClick={handleGenerateClick}
+                                disabled={isGenerating || !formData.name}
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 cursor-pointer transition-colors text-sm font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                            >
+                                {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                                {isGenerating ? "Generating..." : "Generate"}
+                            </button>
+                        </div>
+                        <input 
+                             type="text" 
+                             value={negativePrompt}
+                             onChange={(e) => setNegativePrompt(e.target.value)}
+                             placeholder="Negative prompt: Exclude elements (e.g. blurry, text, logo...)"
+                             className="w-full px-3 py-2 border border-purple-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 outline-none bg-white placeholder-purple-300"
+                        />
+                    </div>
+                 </div>
+                 
+                 <div className="flex items-center gap-2">
+                     <span className="text-xs text-gray-500 flex-1">Or upload from your device:</span>
+                     <input 
+                        type="file"
+                        id="image-upload"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                     />
+                     <label 
+                        htmlFor="image-upload"
+                        className={`flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors text-sm font-medium whitespace-nowrap ${isUploading ? 'opacity-70 cursor-wait' : ''}`}
+                     >
+                        {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        {isUploading ? "Uploading..." : "Upload File"}
+                     </label>
+                 </div>
               </div>
-              <p className="text-xs text-gray-500">
-                Paste a URL, upload a file, or click 'Generate AI' to create an image.
-              </p>
             </div>
           </div>
         
@@ -830,14 +972,14 @@ const ProductFormModal = ({
             <button 
               type="button"
               onClick={onClose}
-              disabled={isGenerating}
+              disabled={isGenerating || isUploading}
               className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button 
               type="submit"
-              disabled={isGenerating}
+              disabled={isGenerating || isUploading}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isGenerating ? (
@@ -856,6 +998,13 @@ const ProductFormModal = ({
   );
 };
 
+// --- Sorting Types & Component ---
+type SortKey = 'name' | 'category' | 'price' | 'stock';
+interface SortConfig {
+    key: SortKey;
+    direction: 'asc' | 'desc';
+}
+
 const AdminLayout: React.FC = () => {
   const { products, deleteProduct, addProduct, updateProduct } = useStore();
   const location = useLocation();
@@ -863,16 +1012,60 @@ const AdminLayout: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   
+  // Sorting State
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const isProductsPage = location.pathname.includes('/products');
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) || 
-    p.category.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+        const lowerSearch = productSearch.toLowerCase();
+        return (
+            p.name.toLowerCase().includes(lowerSearch) || 
+            p.category.toLowerCase().includes(lowerSearch) ||
+            p.tags?.some(tag => tag.toLowerCase().includes(lowerSearch))
+        );
+    });
+  }, [products, productSearch]);
+
+  const sortedProducts = useMemo(() => {
+    if (!sortConfig) return filteredProducts;
+    
+    return [...filteredProducts].sort((a, b) => {
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+        
+        // Handle sorting for products with variations (e.g. use min price)
+        if (sortConfig.key === 'price') {
+             // If product has variations, use the lowest price for sorting
+             if (a.variations && a.variations.length > 0) aValue = Math.min(a.price, ...a.variations.map(v => v.price));
+             if (b.variations && b.variations.length > 0) bValue = Math.min(b.price, ...b.variations.map(v => v.price));
+        }
+
+        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+  }, [filteredProducts, sortConfig]);
+
+  const requestSort = (key: SortKey) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const getSortIcon = (key: SortKey) => {
+      if (sortConfig?.key !== key) return <ArrowUpDown size={14} className="text-gray-400" />;
+      return sortConfig.direction === 'asc' 
+        ? <ArrowUp size={14} className="text-blue-600" />
+        : <ArrowDown size={14} className="text-blue-600" />;
+  };
 
   const handleEdit = (product: Product) => {
     setEditingProduct(product);
@@ -979,7 +1172,7 @@ const AdminLayout: React.FC = () => {
                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                        <input 
                           type="text" 
-                          placeholder="Search products..." 
+                          placeholder="Search products, categories, tags..." 
                           value={productSearch}
                           onChange={(e) => setProductSearch(e.target.value)}
                           className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1000,22 +1193,30 @@ const AdminLayout: React.FC = () => {
                        <table className="w-full text-left">
                           <thead>
                              <tr className="bg-gray-50 border-b border-gray-200">
-                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Product</th>
-                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm">Category</th>
-                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Price</th>
-                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Stock</th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('name')}>
+                                    <div className="flex items-center gap-2">Product {getSortIcon('name')}</div>
+                                </th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('category')}>
+                                    <div className="flex items-center gap-2">Category {getSortIcon('category')}</div>
+                                </th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('price')}>
+                                    <div className="flex items-center justify-end gap-2">Price {getSortIcon('price')}</div>
+                                </th>
+                                <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => requestSort('stock')}>
+                                    <div className="flex items-center justify-end gap-2">Stock {getSortIcon('stock')}</div>
+                                </th>
                                 <th className="px-6 py-4 font-semibold text-gray-600 text-sm text-right">Actions</th>
                              </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                             {filteredProducts.length === 0 ? (
+                             {sortedProducts.length === 0 ? (
                                 <tr>
                                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
                                       No products found matching your search.
                                    </td>
                                 </tr>
                              ) : (
-                                filteredProducts.map((product) => (
+                                sortedProducts.map((product) => (
                                    <tr key={product.id} className="group hover:bg-gray-50/50 transition-colors">
                                       <td className="px-6 py-4">
                                          <div className="flex items-center gap-3">
@@ -1024,9 +1225,14 @@ const AdminLayout: React.FC = () => {
                                             </div>
                                             <div>
                                                <p className="font-semibold text-gray-800 text-sm">{product.name}</p>
-                                               {product.variations && product.variations.length > 0 && (
-                                                  <p className="text-xs text-blue-600 font-medium">{product.variations.length} variations</p>
-                                               )}
+                                               <div className="flex flex-wrap gap-1 mt-0.5">
+                                                  {product.variations && product.variations.length > 0 && (
+                                                     <span className="text-[10px] text-blue-600 font-medium bg-blue-50 px-1.5 rounded">{product.variations.length} vars</span>
+                                                  )}
+                                                  {product.tags && product.tags.map(tag => (
+                                                      <span key={tag} className="text-[10px] text-gray-500 bg-gray-100 px-1.5 rounded border border-gray-200">{tag}</span>
+                                                  ))}
+                                               </div>
                                             </div>
                                          </div>
                                       </td>
