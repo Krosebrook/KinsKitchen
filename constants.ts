@@ -28,10 +28,10 @@ export const MOCK_STATS: DashboardStats = {
 };
 
 export const RECENT_ORDERS: Order[] = [
-  { id: '#ORD-001', customer: 'John Doe', total: 24.50, status: 'Completed', date: '2023-10-25', items: [] },
-  { id: '#ORD-002', customer: 'Jane Smith', total: 12.99, status: 'Completed', date: '2023-10-25', items: [] },
-  { id: '#ORD-003', customer: 'Bob Johnson', total: 45.00, status: 'Pending', date: '2023-10-24', items: [] },
-  { id: '#ORD-004', customer: 'Alice Brown', total: 8.99, status: 'Completed', date: '2023-10-24', items: [] },
+  { id: '#ORD-001', customer: 'John Doe', total: 24.50, tax: 2.45, status: 'Completed', date: '2023-10-25', items: [], paymentMethod: 'Card' },
+  { id: '#ORD-002', customer: 'Jane Smith', total: 12.99, tax: 1.30, status: 'Completed', date: '2023-10-25', items: [], paymentMethod: 'Cash' },
+  { id: '#ORD-003', customer: 'Bob Johnson', total: 45.00, tax: 4.50, status: 'Pending', date: '2023-10-24', items: [], paymentMethod: 'Card' },
+  { id: '#ORD-004', customer: 'Alice Brown', total: 8.99, tax: 0.90, status: 'Completed', date: '2023-10-24', items: [], paymentMethod: 'Cash' },
 ];
 
 export const CHART_DATA = [

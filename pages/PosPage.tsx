@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Category, Product, ProductVariation } from '../types';
+import { Category, Product, ProductVariation, PaymentMethod, Order } from '../types';
 import { 
   Search, 
   Settings, 
@@ -15,7 +15,12 @@ import {
   Coffee,
   IceCream,
   X,
-  Menu
+  Menu,
+  CreditCard,
+  Banknote,
+  CheckCircle,
+  Printer,
+  Layers
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -33,23 +38,32 @@ const VariationSelectionModal = ({
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-slide-up">
         <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-          <h3 className="font-bold text-lg text-gray-800">Select Option</h3>
+          <div>
+            <h3 className="font-bold text-lg text-gray-800">Select Variation</h3>
+            <p className="text-xs text-gray-500">{product.name}</p>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={20} />
           </button>
         </div>
         <div className="p-6">
-           <h4 className="text-gray-500 text-sm mb-4 font-medium uppercase tracking-wide">Available Variations for {product.name}</h4>
            <div className="grid gap-3">
               {product.variations?.map(variation => (
                   <button
                     key={variation.id}
                     onClick={() => onSelect(variation)}
-                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all group text-left"
+                    disabled={variation.stock === 0}
+                    className={`flex items-center justify-between p-4 border rounded-lg transition-all group text-left ${
+                        variation.stock === 0 
+                        ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed' 
+                        : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50 hover:shadow-sm'
+                    }`}
                   >
                       <div>
                           <span className="font-bold text-gray-800 block group-hover:text-blue-700">{variation.name}</span>
-                          <span className="text-xs text-gray-500">{variation.stock} in stock</span>
+                          <span className={`text-xs ${variation.stock < 5 && variation.stock > 0 ? 'text-orange-500 font-bold' : variation.stock === 0 ? 'text-red-500 font-bold' : 'text-gray-500'}`}>
+                            {variation.stock === 0 ? 'Out of Stock' : `${variation.stock} available`}
+                          </span>
                       </div>
                       <span className="font-bold text-blue-600 text-lg">${variation.price.toFixed(2)}</span>
                   </button>
@@ -61,11 +75,186 @@ const VariationSelectionModal = ({
   );
 };
 
+// --- Checkout Modal ---
+const CheckoutModal = ({
+  total,
+  onClose,
+  onConfirm
+}: {
+  total: number,
+  onClose: () => void,
+  onConfirm: (name: string, method: PaymentMethod) => void
+}) => {
+  const [customerName, setCustomerName] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Card');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsProcessing(true);
+    // Simulate network delay for realistic feel
+    await new Promise(resolve => setTimeout(resolve, 800)); 
+    onConfirm(customerName, paymentMethod);
+    setIsProcessing(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+             <h3 className="font-bold text-xl text-gray-800">Checkout</h3>
+             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+             </button>
+          </div>
+          
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+             <div className="text-center mb-6">
+                <span className="text-gray-500 text-sm">Total Amount Due</span>
+                <h2 className="text-4xl font-extrabold text-gray-900 mt-1">${total.toFixed(2)}</h2>
+             </div>
+
+             <div className="space-y-4">
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name (Optional)</label>
+                   <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input 
+                         type="text" 
+                         value={customerName}
+                         onChange={(e) => setCustomerName(e.target.value)}
+                         className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         placeholder="Walk-in Customer"
+                      />
+                   </div>
+                </div>
+
+                <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Payment Method</label>
+                   <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('Card')}
+                        className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                           paymentMethod === 'Card' 
+                           ? 'border-blue-600 bg-blue-50 text-blue-700' 
+                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                        }`}
+                      >
+                         <CreditCard size={24} className="mb-2" />
+                         <span className="font-semibold text-sm">Card Payment</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('Cash')}
+                        className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${
+                           paymentMethod === 'Cash' 
+                           ? 'border-green-600 bg-green-50 text-green-700' 
+                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                        }`}
+                      >
+                         <Banknote size={24} className="mb-2" />
+                         <span className="font-semibold text-sm">Cash</span>
+                      </button>
+                   </div>
+                </div>
+             </div>
+
+             <button 
+                type="submit" 
+                disabled={isProcessing}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-200 hover:shadow-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+             >
+                {isProcessing ? 'Processing...' : `Pay $${total.toFixed(2)}`}
+             </button>
+          </form>
+       </div>
+    </div>
+  );
+};
+
+// --- Receipt Modal ---
+const ReceiptModal = ({
+  order,
+  onClose
+}: {
+  order: Order,
+  onClose: () => void
+}) => {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-scale-in flex flex-col max-h-[90vh]">
+          <div className="bg-green-600 p-6 text-white text-center">
+             <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+                <CheckCircle size={32} className="text-white" />
+             </div>
+             <h3 className="font-bold text-2xl">Payment Successful!</h3>
+             <p className="text-green-100 mt-1">Order {order.id}</p>
+          </div>
+          
+          <div className="p-6 flex-1 overflow-y-auto">
+             <div className="flex justify-between items-center text-sm text-gray-500 mb-6 pb-6 border-b border-dashed border-gray-200">
+                <span>{new Date(order.date).toLocaleString()}</span>
+                <span className="font-medium text-gray-800">{order.paymentMethod}</span>
+             </div>
+             
+             <div className="space-y-3 mb-6">
+                {order.items.map((item, idx) => (
+                   <div key={idx} className="flex justify-between text-sm">
+                      <div className="flex-1">
+                         <span className="font-medium text-gray-800">{item.name}</span>
+                         {item.selectedVariation && (
+                            <span className="text-xs text-gray-500 block">{item.selectedVariation.name}</span>
+                         )}
+                      </div>
+                      <div className="text-right">
+                         <span className="text-gray-500">x{item.quantity}</span>
+                         <span className="font-medium text-gray-800 ml-3">
+                            ${((item.selectedVariation?.price || item.price) * item.quantity).toFixed(2)}
+                         </span>
+                      </div>
+                   </div>
+                ))}
+             </div>
+
+             <div className="border-t border-gray-200 pt-4 space-y-2">
+                <div className="flex justify-between text-sm text-gray-600">
+                   <span>Subtotal</span>
+                   <span>${(order.total - order.tax).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-gray-600">
+                   <span>Tax (10%)</span>
+                   <span>${order.tax.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold text-gray-900 pt-2">
+                   <span>Total</span>
+                   <span>${order.total.toFixed(2)}</span>
+                </div>
+             </div>
+          </div>
+
+          <div className="p-4 border-t border-gray-100 bg-gray-50 grid grid-cols-2 gap-3">
+             <button onClick={onClose} className="py-2.5 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors">
+                Close
+             </button>
+             <button onClick={() => window.print()} className="py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                <Printer size={16} /> Print Receipt
+             </button>
+          </div>
+       </div>
+    </div>
+  );
+};
+
 const PosPage: React.FC = () => {
-  const { products, cart, addToCart, removeFromCart, updateQuantity, clearCart, searchQuery, setSearchQuery } = useStore();
+  const { products, cart, addToCart, removeFromCart, updateQuantity, clearCart, searchQuery, setSearchQuery, placeOrder } = useStore();
   const [selectedCategory, setSelectedCategory] = useState<Category>('All Products');
   const [activeProductForVariation, setActiveProductForVariation] = useState<Product | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Checkout Modal States
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [lastOrder, setLastOrder] = useState<Order | null>(null);
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
@@ -83,10 +272,15 @@ const PosPage: React.FC = () => {
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleProductClick = (product: Product) => {
-    if (product.variations && product.variations.length > 0) {
-        setActiveProductForVariation(product);
-    } else {
+    // Check stock for base product if no variations
+    if (!product.variations || product.variations.length === 0) {
+        if (product.stock === 0) {
+            alert('Item is out of stock');
+            return;
+        }
         addToCart(product);
+    } else {
+        setActiveProductForVariation(product);
     }
   };
 
@@ -95,6 +289,17 @@ const PosPage: React.FC = () => {
         addToCart(activeProductForVariation, variation);
         setActiveProductForVariation(null);
     }
+  };
+
+  const handleCheckoutConfirm = async (name: string, method: PaymentMethod) => {
+     try {
+         const order = await placeOrder(name, method);
+         setLastOrder(order);
+         setIsCheckoutOpen(false);
+     } catch (error) {
+         console.error("Checkout failed", error);
+         alert("Checkout failed. Please try again.");
+     }
   };
 
   const getCategoryIcon = (cat: Category) => {
@@ -209,30 +414,62 @@ const PosPage: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 lg:gap-4">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  onClick={() => handleProductClick(product)}
-                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group flex flex-col h-full"
-                >
-                  <div className="relative pt-[75%] bg-gray-100 overflow-hidden">
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {product.variations && product.variations.length > 0 && (
-                        <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">
-                            {product.variations.length} Options
-                        </div>
-                    )}
+              {filteredProducts.map((product) => {
+                const hasVariations = product.variations && product.variations.length > 0;
+                return (
+                  <div
+                    key={product.id}
+                    onClick={() => handleProductClick(product)}
+                    className={`bg-white rounded-xl shadow-sm border overflow-hidden cursor-pointer hover:shadow-md transition-all group flex flex-col h-full ${
+                      (!hasVariations && product.stock === 0) 
+                          ? 'border-gray-200 opacity-60 grayscale' 
+                          : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="relative pt-[75%] bg-gray-100 overflow-hidden">
+                      <img
+                        src={product.image}
+                        alt={product.name}
+                        className="absolute top-0 left-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {hasVariations ? (
+                          <div className="absolute top-2 right-2 bg-purple-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                              <Layers size={10} />
+                              <span>Options</span>
+                          </div>
+                      ) : product.stock === 0 ? (
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                              <span className="bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">OUT OF STOCK</span>
+                          </div>
+                      ) : (
+                           <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm text-gray-700 text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+                              {product.stock} left
+                           </div>
+                      )}
+                    </div>
+                    <div className="p-3 lg:p-4 flex-1 flex flex-col">
+                      <div className="flex justify-between items-start mb-1">
+                          <h3 className="font-bold text-gray-800 leading-tight text-sm lg:text-base line-clamp-2">{product.name}</h3>
+                      </div>
+                      
+                      <div className="mt-auto flex items-end justify-between">
+                          <p className="text-blue-600 font-bold text-sm lg:text-base">
+                              {hasVariations ? (
+                                  <span className="text-xs text-gray-500 font-normal">From <span className="text-blue-600 font-bold text-sm lg:text-base">${Math.min(...product.variations!.map(v => v.price)).toFixed(2)}</span></span>
+                              ) : (
+                                  `$${product.price.toFixed(2)}`
+                              )}
+                          </p>
+                          {hasVariations && (
+                              <div className="text-[10px] text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded">
+                                  {product.variations?.length} Vars
+                              </div>
+                          )}
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3 lg:p-4 flex-1 flex flex-col">
-                    <h3 className="font-bold text-gray-800 mb-1 leading-tight text-sm lg:text-base line-clamp-2">{product.name}</h3>
-                    <p className="text-blue-600 font-bold mt-auto text-sm lg:text-base">${product.price.toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -277,14 +514,18 @@ const PosPage: React.FC = () => {
             cart.map((item) => {
                 const itemPrice = item.selectedVariation ? item.selectedVariation.price : item.price;
                 return (
-                  <div key={item.cartItemId} className="flex gap-3 bg-white p-2 lg:p-3 rounded-lg border border-gray-100 shadow-sm">
+                  <div key={item.cartItemId} className="flex gap-3 bg-white p-2 lg:p-3 rounded-lg border border-gray-100 shadow-sm animate-fade-in">
                     <img src={item.image} alt={item.name} className="w-12 h-12 lg:w-16 lg:h-16 rounded-md object-cover bg-gray-100 shrink-0" />
                     <div className="flex-1 flex flex-col justify-between min-w-0">
                       <div className="flex justify-between items-start gap-2">
                         <div className="min-w-0">
                             <h4 className="font-semibold text-gray-800 text-sm truncate">{item.name}</h4>
                             {item.selectedVariation && (
-                                <span className="inline-block text-[10px] lg:text-xs text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded mt-0.5">{item.selectedVariation.name}</span>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                    <span className="inline-block text-[10px] text-purple-700 font-semibold bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded">
+                                        {item.selectedVariation.name}
+                                    </span>
+                                </div>
                             )}
                         </div>
                         <span className="font-bold text-gray-900 text-sm whitespace-nowrap">${(itemPrice * item.quantity).toFixed(2)}</span>
@@ -338,12 +579,7 @@ const PosPage: React.FC = () => {
           </div>
           
           <button 
-            onClick={() => {
-              if (cart.length > 0) {
-                alert('Order processed successfully!');
-                clearCart();
-              }
-            }}
+            onClick={() => setIsCheckoutOpen(true)}
             disabled={cart.length === 0}
             className={`w-full py-3 lg:py-4 rounded-xl font-bold text-base lg:text-lg shadow-lg transition-all ${
               cart.length > 0 
@@ -362,6 +598,21 @@ const PosPage: React.FC = () => {
             onClose={() => setActiveProductForVariation(null)}
             onSelect={handleVariationSelect}
         />
+      )}
+
+      {isCheckoutOpen && (
+          <CheckoutModal 
+            total={cartTotal * 1.1} 
+            onClose={() => setIsCheckoutOpen(false)}
+            onConfirm={handleCheckoutConfirm}
+          />
+      )}
+
+      {lastOrder && (
+          <ReceiptModal 
+             order={lastOrder}
+             onClose={() => setLastOrder(null)}
+          />
       )}
     </div>
   );

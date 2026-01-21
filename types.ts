@@ -11,6 +11,7 @@ export interface Product {
   category: string;
   price: number;
   image: string;
+  images?: string[]; // Support for multiple images
   stock: number;
   margin: number;
   variations?: ProductVariation[];
@@ -23,13 +24,17 @@ export interface CartItem extends Product {
   selectedVariation?: ProductVariation;
 }
 
+export type PaymentMethod = 'Cash' | 'Card' | 'Online';
+
 export interface Order {
   id: string;
   items: CartItem[];
   total: number;
-  date: string;
-  status: 'Completed' | 'Pending' | 'Cancelled';
+  tax: number;
+  date: string; // ISO string
+  status: 'Completed' | 'Pending' | 'Cancelled' | 'Refunded';
   customer: string;
+  paymentMethod: PaymentMethod;
 }
 
 export type Category = 'All Products' | 'Food' | 'Drinks' | 'Desserts';
@@ -39,6 +44,6 @@ export interface DashboardStats {
   totalOrders: number;
   totalCustomers: number;
   lowStockAlerts: number;
-  salesChange: number;
-  ordersChange: number;
+  salesChange: number; // Percentage
+  ordersChange: number; // Percentage
 }

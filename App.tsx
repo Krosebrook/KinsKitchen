@@ -12,6 +12,7 @@ const App: React.FC = () => {
           <Route path="/" element={<PosPage />} />
           <Route path="/admin" element={<AdminLayout />} />
           <Route path="/admin/products" element={<AdminLayout />} />
+          <Route path="/admin/orders" element={<AdminLayout />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>
